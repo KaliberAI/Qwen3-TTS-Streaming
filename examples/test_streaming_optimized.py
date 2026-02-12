@@ -26,7 +26,7 @@ def log_time(start, operation):
     print(f"[{elapsed:.2f}s] {operation}")
     return time.time()
 
-
+'''
 def run_streaming_test(
     model,
     text: str,
@@ -78,7 +78,75 @@ def run_streaming_test(
         "avg_chunk_samples": avg_chunk_samples,
         "avg_chunk_duration": avg_chunk_duration,
     }
+'''
 
+import time
+import numpy as np
+import pickle
+
+def run_streaming_test(
+    model,
+    text: str,
+    language: str,
+    voice_clone_prompt,
+    emit_every_frames: int = 8,
+    decode_window_frames: int = 80,
+    label: str = "streaming",
+    save_chunks: bool = False,
+    chunks_file: str = "streaming_chunks.pkl",
+):
+    start = time.time()
+    chunks = []
+    chunk_sizes = []
+    chunk_timings = []
+    first_chunk_time = None
+    chunk_count = 0
+    sample_rate = 24000
+
+    for chunk, chunk_sr in model.stream_generate_voice_clone(
+        text=text,
+        language=language,
+        voice_clone_prompt=voice_clone_prompt,
+        emit_every_frames=emit_every_frames,
+        decode_window_frames=decode_window_frames,
+        overlap_samples=0,
+    ):
+        chunk_count += 1
+        chunks.append(chunk)
+        chunk_sizes.append(len(chunk))
+        sample_rate = chunk_sr
+        if first_chunk_time is None:
+            first_chunk_time = time.time() - start
+        if save_chunks:
+            chunk_timings.append(time.time() - start)
+
+    total_time = time.time() - start
+    final_audio = np.concatenate(chunks) if chunks else np.array([])
+    audio_duration = len(final_audio) / sample_rate if sample_rate > 0 else 0
+    avg_chunk_samples = np.mean(chunk_sizes) if chunk_sizes else 0
+    avg_chunk_duration = avg_chunk_samples / sample_rate if sample_rate > 0 else 0
+
+    if save_chunks:
+        stream_data = {
+            'chunks': chunks,
+            'chunk_timings': chunk_timings,
+            'sample_rate': sample_rate,
+            'first_chunk_time': first_chunk_time,
+        }
+        with open(chunks_file, 'wb') as f:
+            pickle.dump(stream_data, f)
+
+    return {
+        "label": label,
+        "first_chunk_time": first_chunk_time,
+        "total_time": total_time,
+        "chunk_count": chunk_count,
+        "audio": final_audio,
+        "sample_rate": sample_rate,
+        "audio_duration": audio_duration,
+        "avg_chunk_samples": avg_chunk_samples,
+        "avg_chunk_duration": avg_chunk_duration,
+    }
 
 def main():
     total_start = time.time()
